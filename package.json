@@ -1,6 +1,6 @@
 {
   "name": "@ipsoftware/medusa-acl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Role-based access control for the Medusa v2 admin dashboard — a self-contained module, no dependency on the core's experimental RBAC feature flag.",
   "keywords": [
     "medusa",
