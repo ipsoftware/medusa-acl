@@ -20,8 +20,9 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      # Trusted Publishing needs an npm CLI new enough to speak OIDC.
-      - run: npm install -g npm@latest
+      # Trusted Publishing needs an npm CLI new enough to speak OIDC (11.5.1+).
+      # Pinned to the 11.x line — npm 12 requires Node >=22, but this job runs on Node 20.
+      - run: npm install -g npm@11
       - run: npm run typecheck
       - run: npm test
       - run: npm publish --access public --provenance
