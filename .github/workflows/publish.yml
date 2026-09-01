@@ -1,0 +1,27 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for npm's OIDC-based Trusted Publishing — no NPM_TOKEN secret needed.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      # Trusted Publishing needs an npm CLI new enough to speak OIDC.
+      - run: npm install -g npm@latest
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm publish --access public --provenance
