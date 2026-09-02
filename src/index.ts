@@ -13,8 +13,17 @@ export type {
   AccessResolver,
   GuardLogger,
 } from "./guard"
-export { createAccessResolver, parseSuperadminEmails } from "./access"
-export type { AclServiceLike, CreateAccessResolverOptions } from "./access"
+export {
+  aclOptionsFromEnv,
+  createAccessResolver,
+  createSuperadminResolver,
+  parseSuperadminEmails,
+} from "./access"
+export type {
+  AclServiceLike,
+  CreateAccessResolverOptions,
+  SuperadminResolver,
+} from "./access"
 export { keepsAclControl, ACL_CONTROL_PERMISSION } from "./self-lockout"
 export type { RoleLike, LockoutCheckInput } from "./self-lockout"
 export { TtlCache } from "./cache"

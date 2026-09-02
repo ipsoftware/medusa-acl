@@ -7,7 +7,7 @@
 // nothing about a database or a Medusa container and is testable with plain
 // mocks.
 // ---------------------------------------------------------------------------
-import { hasPermission, permissionForRequest } from "../permissions"
+import { accessAllows, permissionForRequest } from "../permissions"
 
 export type AclAccess = {
   /** Whether access control is in effect at all — i.e. whether any role has been assigned yet. */
@@ -86,14 +86,13 @@ export function createAclGuard(
       req.acl_access = access
     }
 
-    // Nobody has been assigned a role yet => the module is installed but not
-    // configured. We let the request through so that merely installing the
-    // module, or preparing roles, can never lock the store owner out.
-    if (!access || !access.active || access.superadmin) {
-      return next()
-    }
-
-    if (required !== false && hasPermission(access.permissions, required)) {
+    // The decision itself lives in `accessAllows` (permissions module), shared
+    // with whatever gates your dashboard. It carries the escape hatches: no
+    // verdict, ACL not configured yet (nobody has been assigned a role), and
+    // superadmin. Passing `null` instead of `required` marks a path we cannot
+    // classify — the escape hatches still apply, but there is no concrete
+    // permission left to check.
+    if (accessAllows(access, required === false ? null : required)) {
       return next()
     }
 
