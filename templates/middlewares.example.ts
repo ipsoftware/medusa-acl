@@ -5,9 +5,9 @@
  */
 import { defineMiddlewares } from "@medusajs/framework/http"
 import {
+  aclOptionsFromEnv,
   createAclGuard,
   createAccessResolver,
-  parseSuperadminEmails,
 } from "@ipsoftware/medusa-acl"
 
 // The core authenticates `/admin` with its own middleware, registered
@@ -15,15 +15,12 @@ import {
 // is already set by the time this guard runs. The matcher is a wildcard, and
 // wildcard matchers are sorted ahead of static routes — so the guard sits in
 // front of every dashboard handler, including ones added later.
-const aclGuard = createAclGuard(
-  createAccessResolver({
-    // Emergency allowlist: accounts on this list pass everything regardless
-    // of role. Without it, a bad role configuration can lock the dashboard
-    // with no way back in.
-    superadminEmails: parseSuperadminEmails(process.env.ACL_SUPERADMIN_EMAILS),
-    cacheTtlMs: Number(process.env.ACL_CACHE_TTL_MS ?? 30000),
-  })
-)
+// Emergency allowlist (ACL_SUPERADMIN_EMAILS): accounts on this list pass
+// everything regardless of role. Without it, a bad role configuration can lock
+// the dashboard with no way back in. Read the options through
+// `aclOptionsFromEnv()` so that your `/admin/acl/me` route resolves the same
+// superadmins — if the two disagree, the dashboard hides screens the API serves.
+const aclGuard = createAclGuard(createAccessResolver(aclOptionsFromEnv()))
 
 export default defineMiddlewares({
   routes: [

@@ -1,6 +1,11 @@
 import { TtlCache } from "../../cache"
 import { ACL_MODULE } from "../../const"
-import { createAccessResolver, parseSuperadminEmails } from ".."
+import {
+  aclOptionsFromEnv,
+  createAccessResolver,
+  createSuperadminResolver,
+  parseSuperadminEmails,
+} from ".."
 
 function makeReq(options: {
   actorId?: string
@@ -152,5 +157,80 @@ describe("createAccessResolver", () => {
     })
 
     expect((await resolver(req))?.permissions).toEqual([])
+  })
+})
+
+describe("createSuperadminResolver", () => {
+  it("matches an account on the list, case-insensitively", async () => {
+    const isSuperadmin = createSuperadminResolver({
+      superadminEmails: ["Boss@Shop.test"],
+    })
+    const { req } = makeReq({ actorId: "user_1", user: { email: "BOSS@shop.TEST" } })
+
+    expect(await isSuperadmin(req, "user_1")).toBe(true)
+  })
+
+  it("an account off the list is not a superadmin", async () => {
+    const isSuperadmin = createSuperadminResolver({
+      superadminEmails: ["boss@shop.test"],
+    })
+    const { req } = makeReq({ actorId: "user_1", user: { email: "someone@else.test" } })
+
+    expect(await isSuperadmin(req, "user_1")).toBe(false)
+  })
+
+  it("an empty list never asks the user module for an email", async () => {
+    const isSuperadmin = createSuperadminResolver()
+    const { req, userService } = makeReq({
+      actorId: "user_1",
+      user: { email: "boss@shop.test" },
+    })
+
+    expect(await isSuperadmin(req, "user_1")).toBe(false)
+    expect(userService.retrieveUser).not.toHaveBeenCalled()
+  })
+
+  it("an unknown user is not a superadmin, and not a crash", async () => {
+    const isSuperadmin = createSuperadminResolver({
+      superadminEmails: ["boss@shop.test"],
+    })
+    const { req } = makeReq({ actorId: "user_1" })
+
+    expect(await isSuperadmin(req, "user_1")).toBe(false)
+  })
+})
+
+describe("aclOptionsFromEnv", () => {
+  it("reads the allowlist and the TTL from the environment", () => {
+    expect(
+      aclOptionsFromEnv({
+        ACL_SUPERADMIN_EMAILS: "a@x.test, B@X.test",
+        ACL_CACHE_TTL_MS: "5000",
+      })
+    ).toEqual({ superadminEmails: ["a@x.test", "b@x.test"], cacheTtlMs: 5000 })
+  })
+
+  it("with nothing set, an empty list and the default TTL", () => {
+    const options = aclOptionsFromEnv({})
+
+    expect(options.superadminEmails).toEqual([])
+    expect(options.cacheTtlMs).toBe(30000)
+  })
+
+  it("the guard and an /admin/acl/me route agree on who is a superadmin", async () => {
+    // The point of the fix: if these two read the environment separately and
+    // drift apart, the dashboard hides the roles screen from an account the
+    // API lets through.
+    const env = { ACL_SUPERADMIN_EMAILS: "boss@shop.test" }
+    const resolveAccess = createAccessResolver(aclOptionsFromEnv(env))
+    const isSuperadmin = createSuperadminResolver(aclOptionsFromEnv(env))
+    const { req } = makeReq({
+      actorId: "user_1",
+      user: { email: "boss@shop.test" },
+      access: { active: true, permissions: [] },
+    })
+
+    expect((await resolveAccess(req))?.superadmin).toBe(true)
+    expect(await isSuperadmin(req, "user_1")).toBe(true)
   })
 })

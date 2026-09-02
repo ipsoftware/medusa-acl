@@ -287,6 +287,48 @@ export function hasPermission(
 }
 
 /**
+ * As much of the access state as the decision needs. Structural on purpose
+ * rather than importing `AclAccess` from the guard — the guard imports from
+ * here, so a dependency the other way would be a cycle.
+ */
+export type AccessSnapshot = {
+  active?: boolean
+  superadmin?: boolean
+  permissions?: readonly string[]
+}
+
+/**
+ * Whether this access state lets a request for `required` through.
+ *
+ * This is the single place that decision is made. The guard uses it, and so
+ * should your dashboard: a superadmin holds no role at all, so judging by
+ * `permissions` alone makes the one account that passes everything look like
+ * the one account with no access. Re-implementing the check in the UI is how
+ * you end up hiding the roles screen from the very person meant to fix a
+ * broken role setup.
+ *
+ * `required === null` means "a dashboard path we cannot classify": the escape
+ * hatches (no verdict, ACL not active, superadmin) still apply, but there is
+ * no concrete permission left to check, so anything else is denied.
+ */
+export function accessAllows(
+  access: AccessSnapshot | null | undefined,
+  required: string | null
+): boolean {
+  // No verdict, or ACL not configured yet => never lock the store owner out.
+  // `superadmin` is the escape hatch for a role setup gone wrong.
+  if (!access || !access.active || access.superadmin) {
+    return true
+  }
+
+  if (required === null) {
+    return false
+  }
+
+  return hasPermission(access.permissions ?? [], required)
+}
+
+/**
  * The permission a request requires. `null` means the request is out of
  * scope for access control (non-admin path, unclassified method, an
  * always-allowed route). `false` means an admin path we can't classify.

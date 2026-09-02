@@ -51,17 +51,12 @@ pre-built inside the package — you don't need to (and shouldn't) run
 // src/api/middlewares.ts
 import { defineMiddlewares } from "@medusajs/framework/http"
 import {
+  aclOptionsFromEnv,
   createAclGuard,
   createAccessResolver,
-  parseSuperadminEmails,
 } from "@ipsoftware/medusa-acl"
 
-const aclGuard = createAclGuard(
-  createAccessResolver({
-    superadminEmails: parseSuperadminEmails(process.env.ACL_SUPERADMIN_EMAILS),
-    cacheTtlMs: Number(process.env.ACL_CACHE_TTL_MS ?? 30000),
-  })
-)
+const aclGuard = createAclGuard(createAccessResolver(aclOptionsFromEnv()))
 
 export default defineMiddlewares({
   routes: [
@@ -185,6 +180,49 @@ container. Tests sit in `__tests__` next to each of them
 (`npm test`). `src/__tests__/service.spec.ts` is an integration test against
 a real database; see the comment at the top of that file for how to run it
 from inside a Medusa project.
+
+## Gating your dashboard: use `accessAllows`, not the permission strings
+
+Your UI has to decide what to hide, and it is tempting to read `permissions`
+from `GET /admin/acl/me` and check it by hand:
+
+```ts
+// Don't. This is wrong in two ways.
+const canManage =
+  permissions.includes("*") ||
+  permissions.includes("acl:*") ||
+  permissions.includes("acl:write")
+```
+
+It misses a **superadmin**, who holds no role at all — by permissions alone the
+one account that passes everything looks like the one account with no access,
+so the screen for repairing a broken role setup is hidden from the only person
+who can still reach it. And it misses wildcards on the resource, like
+`*:write`, which the guard honours and a literal comparison does not.
+
+Use the same function the guard uses, and make sure your `/admin/acl/me` route
+returns `superadmin` (the template in `templates/` does):
+
+```ts
+import { accessAllows } from "@ipsoftware/medusa-acl"
+
+const me = await fetch("/admin/acl/me").then((r) => r.json())
+// -> { active, superadmin, permissions, roles }
+
+const canManage = accessAllows(me, "acl:write")
+```
+
+`accessAllows(access, required)` carries the escape hatches too: it returns
+`true` while ACL is not active yet, and for an `access` you haven't loaded
+(`undefined`), so a dashboard that is still fetching doesn't flash a false
+"not allowed".
+
+One wiring detail: the guard waves `GET /admin/acl/me` through **before** it
+resolves access (it is on the always-allowed list), so `req.acl_access` never
+reaches that route and the flag has to be resolved there with
+`createSuperadminResolver(aclOptionsFromEnv())`. Read the options through
+`aclOptionsFromEnv()` in both places — if the guard and the route disagree on
+who is a superadmin, you are back to hiding screens the API happily serves.
 
 ## Gotcha: you have to write the 403 yourself
 
