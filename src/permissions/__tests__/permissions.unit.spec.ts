@@ -1,6 +1,7 @@
 import {
   ACTIONS,
   BASELINE_PERMISSIONS,
+  accessAllows,
   actionForMethod,
   hasPermission,
   isAdminPath,
@@ -244,5 +245,60 @@ describe("permissionCatalog", () => {
     )
 
     expect(values).toContain("acl:write")
+  })
+})
+
+describe("accessAllows", () => {
+  const access = (partial: Record<string, unknown> = {}) => ({
+    active: true,
+    superadmin: false,
+    permissions: [] as string[],
+    ...partial,
+  })
+
+  it("lets a superadmin through even though they hold no role", () => {
+    // An account on ACL_SUPERADMIN_EMAILS never gets a role assignment, so by
+    // permissions alone it looks like an account with no access. A dashboard
+    // judging by permission strings hides the roles screen from the one person
+    // meant to repair a broken role setup.
+    const superadmin = access({
+      superadmin: true,
+      permissions: ["stores:read", "currencies:read", "regions:read"],
+    })
+
+    expect(accessAllows(superadmin, "acl:write")).toBe(true)
+    expect(accessAllows(superadmin, null)).toBe(true)
+  })
+
+  it("lets everything through until somebody is assigned a role", () => {
+    expect(accessAllows(access({ active: false }), "acl:write")).toBe(true)
+  })
+
+  it("no verdict does not lock the dashboard", () => {
+    expect(accessAllows(null, "acl:write")).toBe(true)
+    expect(accessAllows(undefined, "acl:write")).toBe(true)
+  })
+
+  it("honours wildcards, not just literal entries", () => {
+    expect(accessAllows(access({ permissions: ["*"] }), "acl:write")).toBe(true)
+    expect(accessAllows(access({ permissions: ["acl:*"] }), "acl:write")).toBe(true)
+    // The one a literal `includes()` check in a dashboard would miss.
+    expect(accessAllows(access({ permissions: ["*:write"] }), "acl:write")).toBe(true)
+  })
+
+  it("denies without cover — read alone is not write", () => {
+    expect(accessAllows(access({ permissions: ["acl:read"] }), "acl:write")).toBe(false)
+    expect(
+      accessAllows(access({ permissions: ["products:write"] }), "acl:write")
+    ).toBe(false)
+  })
+
+  it("an unclassifiable path passes only through an escape hatch", () => {
+    expect(accessAllows(access({ permissions: ["*"] }), null)).toBe(false)
+    expect(accessAllows(access({ active: false }), null)).toBe(true)
+  })
+
+  it("a missing permissions field does not blow up on undefined", () => {
+    expect(accessAllows({ active: true }, "acl:write")).toBe(false)
   })
 })

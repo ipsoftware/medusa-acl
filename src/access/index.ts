@@ -41,15 +41,59 @@ export function parseSuperadminEmails(value?: string | null): string[] {
     .filter(Boolean)
 }
 
-export function createAccessResolver(
+/** Whether an account is on the emergency allowlist. */
+export type SuperadminResolver = (
+  req: GuardRequest,
+  actorId: string
+) => Promise<boolean>
+
+/**
+ * Options read from the environment. Use this everywhere rather than reading
+ * `process.env` in each spot: the guard and your `/admin/acl/me` route must
+ * agree on who counts as a superadmin, or the dashboard will hide screens the
+ * API happily serves.
+ */
+export function aclOptionsFromEnv(
+  env: Record<string, string | undefined> = process.env
+): CreateAccessResolverOptions {
+  return {
+    superadminEmails: parseSuperadminEmails(env.ACL_SUPERADMIN_EMAILS),
+    cacheTtlMs: Number(env.ACL_CACHE_TTL_MS ?? DEFAULT_CACHE_TTL_MS),
+  }
+}
+
+/**
+ * Resolves the superadmin flag on its own, for routes the guard waves through
+ * before it resolves access at all — `/admin/acl/me` is on the always-allowed
+ * list, so `req.acl_access` never reaches it.
+ */
+export function createSuperadminResolver(
   options: CreateAccessResolverOptions = {}
-): AccessResolver {
+): SuperadminResolver {
   const superadmins = new Set(
     parseSuperadminEmails((options.superadminEmails ?? []).join(","))
   )
   const emailCache =
     options.emailCache ??
     new TtlCache<string>(options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS)
+
+  return async function isSuperadmin(
+    req: GuardRequest,
+    actorId: string
+  ): Promise<boolean> {
+    // Empty list => no reason to ask the user module for an email at all.
+    if (!superadmins.size || !actorId) {
+      return false
+    }
+
+    return superadmins.has(await resolveEmail(req, actorId, emailCache))
+  }
+}
+
+export function createAccessResolver(
+  options: CreateAccessResolverOptions = {}
+): AccessResolver {
+  const isSuperadmin = createSuperadminResolver(options)
 
   return async function resolveAccess(
     req: GuardRequest
@@ -63,14 +107,10 @@ export function createAccessResolver(
     const acl = req.scope.resolve(ACL_MODULE) as AclServiceLike
     const access = await acl.getAccessForUser(actorId)
 
-    const superadmin = superadmins.size
-      ? superadmins.has(await resolveEmail(req, actorId, emailCache))
-      : false
-
     return {
       active: access.active,
       permissions: access.permissions ?? [],
-      superadmin,
+      superadmin: await isSuperadmin(req, actorId),
     }
   }
 }
